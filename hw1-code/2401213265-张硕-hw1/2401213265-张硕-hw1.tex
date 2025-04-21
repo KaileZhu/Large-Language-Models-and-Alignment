@@ -1,0 +1,168 @@
+\documentclass{article}
+\usepackage[UTF8]{ctex}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{amsmath,amssymb}
+\usepackage{algorithm,algpseudocode}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{tabularx}
+
+\hypersetup{colorlinks=true,urlcolor=blue}
+\renewcommand{\algorithmicrequire}{\textbf{输入:}}
+\renewcommand{\algorithmicensure}{\textbf{输出:}}
+
+\title{BPE算法详解与LLM Tokenizer训练流程}
+\author{Your Name}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{BPE算法（Byte Pair Encoding）}
+\subsection{算法背景}
+BPE是一种\textbf{数据压缩算法}，由Philip Gage于1994年提出。在NLP领域，Sennrich等人(2015)首次将其应用于子词分词，主要解决：
+\begin{itemize}
+    \item 开放词汇表问题(Open Vocabulary)
+    \item 罕见词表示问题(Rare Word Representation)
+    \item 多语言统一处理需求
+\end{itemize}
+
+\subsection{数学形式化定义}
+给定语料库$D$，初始化字符集$V_0$，迭代执行以下操作：
+\[
+(v_i, v_j) = \mathop{\arg\max}\limits_{(x,y) \in P} \text{count}(x,y)
+\]
+其中：
+\begin{itemize}
+    \item $P$为当前所有可能相邻符号对集合
+    \item $\text{count}(x,y)$表示$(x,y)$在$D$中的共现频率
+\end{itemize}
+合并操作更新词汇表：
+\[
+V_{k+1} = V_k \cup \{v_i v_j\} \setminus \{v_i, v_j\}
+\]
+
+\section{BPE核心算法流程}
+\begin{algorithm}[H]
+\caption{BPE训练过程}
+\begin{algorithmic}[1]
+\Require 原始文本语料$D$，目标词汇量$K$
+\Ensure BPE词汇表$V$
+\State 预处理：将$D$中所有单词添加终止符\texttt{</w>}
+\State 初始化$V_0 \gets$ 所有唯一字符 + \texttt{</w>}
+\State 统计所有单词的词频$f(w)$
+\For{$k=1$ to $K-|V_0|$}
+    \State 统计所有相邻符号对频率$f(pair)$
+    \State 选择最高频pair $(x,y)$
+    \State 将合并操作$x + y \rightarrow z$加入合并规则表
+    \State 更新$V_k \gets V_{k-1} \cup \{z\}$
+    \State 更新语料中所有$(x,y)$出现位置为$z$
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{详细步骤解释}
+\begin{enumerate}[label=\textbf{步骤 \arabic*},leftmargin=*]
+    \item \textbf{符号化预处理}
+    \begin{itemize}
+        \item 将文本转换为Unicode编码（处理多语言）
+        \item 添加单词边界标记：\texttt{low} $\Rightarrow$ \texttt{l o w </w>}
+        \item 示例词汇表：$V_0 = \{\texttt{l}, \texttt{o}, \texttt{w}, \texttt{</w>}\}$
+    \end{itemize}
+    
+    \item \textbf{频率统计阶段}
+    \begin{itemize}
+        \item 构建共现矩阵：$\text{count}(x,y) = \sum_{w \in D} f(w) \cdot N_w(x,y)$
+        \item 其中$N_w(x,y)$表示单词$w$中$(x,y)$的出现次数
+    \end{itemize}
+    
+    \item \textbf{动态合并过程}
+    \begin{table}[H]
+    \centering
+    \caption{BPE合并过程示例}
+    \begin{tabular}{cll}
+    \toprule
+    迭代次数 & 合并操作 & 新词汇表 \\
+    \midrule
+    1 & (o, w) $\rightarrow$ ow & \texttt{ow, l, o, w, </w>} \\
+    2 & (l, ow) $\rightarrow$ low & \texttt{low, ow, l, o, w, </w>} \\
+    3 & (e, r) $\rightarrow$ er & \texttt{er, low, ow, ...} \\
+    \bottomrule
+    \end{tabular}
+    \end{table}
+    
+    \item \textbf{终止条件}
+    \begin{itemize}
+        \item 预设条件：达到目标词汇量$K$（典型值：32k, 50k）
+        \item 动态条件：$\max f(pair) < \theta$（阈值$\theta$通常设为2）
+    \end{itemize}
+\end{enumerate}
+
+\section{LLM Tokenizer训练流程}
+\subsection{完整训练架构}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{bpe_pipeline.png}
+\caption{BPE Tokenizer训练流程图}
+\label{fig:pipe}
+\end{figure}
+
+\subsection{关键技术细节}
+\begin{itemize}
+    \item \textbf{字节级处理}（GPT-2方案）
+    \begin{itemize}
+        \item 将文本转换为UTF-8字节序列（256个基础token）
+        \item 优点：完全消除未知字符问题
+        \item 示例：汉字「中」$\rightarrow$ \texttt{E4 B8 AD}
+    \end{itemize}
+    
+    \item \textbf{子词正则化}
+    \begin{itemize}
+        \item 使用Unigram语言模型进行采样
+        \item 实现概率化的分词结果
+    \end{itemize}
+    
+    \item \textbf{合并策略优化}
+    \begin{equation}
+    \text{Score}(x,y) = \frac{\text{count}(x,y)}{\text{count}(x) \times \text{count}(y)}
+    \end{equation}
+    选择互信息最大的符号对进行合并
+\end{itemize}
+
+\section{实现对比分析}
+\begin{table}[H]
+\centering
+\caption{BPE变体对比}
+\begin{tabularx}{\textwidth}{lXXX}
+\toprule
+\textbf{类型} & \textbf{BPE} & \textbf{WordPiece} & \textbf{Unigram} \\
+\midrule
+合并策略 & 频率优先 & 最大似然估计 & 概率删除 \\
+训练方式 & 贪婪合并 & 迭代EM算法 & 动态规划 \\
+处理未知词 & 子词分解 & 同左 & 同左 \\
+典型应用 & GPT系列 & BERT & XLNet \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section*{附录：代码实现}
+\begin{itemize}
+    \item Hugging Face实现核心逻辑：
+    \begin{verbatim}
+class BPE:
+    def train(self, texts, vocab_size):
+        merges = []
+        vocab = self._build_initial_vocab(texts)
+        while len(vocab) < vocab_size:
+            pairs = self._get_pairs_with_freq(texts)
+            if not pairs:
+                break
+            best_pair = max(pairs, key=pairs.get)
+            texts = self._merge_pair(best_pair, texts)
+            merges.append(best_pair)
+            vocab.add(''.join(best_pair))
+        return merges
+    \end{verbatim}
+\end{itemize}
+\end{document}

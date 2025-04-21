@@ -1,0 +1,96 @@
+{
+    "editor.codeActionsOnSave": {}
+    "latex-workshop.latex.autoBuild.run":"onSave",
+    "latex-workshop.latex.autoBuild.interval":10000,
+    "latex-workshop.latex.recipes": 
+    [
+        {
+            "name": "xelatex",
+            "tools": 
+            [
+                "xelatex"
+            ]
+        },
+        {
+            "name": "pdflatex",
+            "tools":
+            [
+                "pdflatex"
+            ]
+        },
+        {
+            "name": "xelatex(double)",
+            "tools": 
+            [
+                "xelatex",
+                "xelatex"
+            ]
+        },
+        {
+            "name": "xe->bib->xe(double)",
+            "tools": 
+            [
+                "xelatex",
+                "bibtex",
+                "xelatex",
+                "xelatex"
+            ]
+        }
+    ],
+    "latex-workshop.latex.tools": 
+    [
+        {
+            "name": "xelatex",
+            "command": "xelatex",
+            "args": 
+            [
+                "-synctex=1",
+                "-interaction=nonstopmode",
+               
+                "-file-line-error",
+                "%DOCFILE%"
+            ]
+        },
+        {
+            "name": "pdflatex",
+            "command": "pdflatex",
+            "args": 
+            [
+                "-synctex=1",
+                "-interaction=nonstopmode",
+                "-file-line-error",
+                "%DOCFILE%"
+            ]
+        },
+        {
+            "name": "bibtex",
+            "command": "bibtex",
+            "args": [
+                "%DOCFILE%"
+            ]
+        }
+    ],
+    "latex-workshop.latex.autoClean.run": "onBuilt",//这个其实可要可不要.
+    "latex-workshop.latex.clean.fileTypes": [//事实上写个makefile直接make clean就好了
+        "*.aux", //而且万一编译错误的话这些文件都会被清除，log文件里面的报错信息也没了
+        "*.bbl",
+        "*.blg",
+        "*.idx",
+        "*.ind",
+        "*.lof",
+        "*.lot",
+        "*.out",
+        "*.toc",
+        "*.acn",
+        "*.acr",
+        "*.alg",
+        "*.glg",
+        "*.glo",
+        "*.gls",
+        "*.ist",
+        "*.fls",
+        "*.log",
+        "*.fdb_latexmk"
+    ],
+}
+

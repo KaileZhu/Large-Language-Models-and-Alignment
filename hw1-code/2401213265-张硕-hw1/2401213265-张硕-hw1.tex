@@ -1,168 +1,297 @@
 \documentclass{article}
+
+% 中文支持
 \usepackage[UTF8]{ctex}
+
+% 页边距设置，缩小左右空白
+\usepackage[a4paper, left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm]{geometry}
+
+% 其他常用宏包
 \usepackage{enumitem}
 \usepackage{xcolor}
+\usepackage{graphicx}
 \usepackage{amsmath,amssymb}
 \usepackage{algorithm,algpseudocode}
 \usepackage{hyperref}
 \usepackage{booktabs}
 \usepackage{tabularx}
+\usepackage{listings}
 
-\hypersetup{colorlinks=true,urlcolor=blue}
+% 超链接颜色设置
+\hypersetup{colorlinks=true,urlcolor=red}
+
+% 算法输入输出格式
 \renewcommand{\algorithmicrequire}{\textbf{输入:}}
 \renewcommand{\algorithmicensure}{\textbf{输出:}}
 
-\title{BPE算法详解与LLM Tokenizer训练流程}
-\author{Your Name}
+% 文档标题、作者和日期
+\title{Large Language Models and Alignment —— Homework1}
+\author{张硕}
 \date{\today}
+
+
+
+% 定义代码块
+\definecolor{codegray}{gray}{0.95}
+\lstset{
+  backgroundcolor=\color{codegray},   % 代码背景色
+  basicstyle=\ttfamily\small,         % 字体风格和大小
+  keywordstyle=\color{blue},          % 关键字颜色
+  commentstyle=\color{gray},          % 注释颜色
+  stringstyle=\color{orange},         % 字符串颜色
+  breaklines=true,                    % 自动换行
+  frame=single,                       % 边框
+  columns=fullflexible,               % 字母不压缩
+  language=Python                     % 指定语言（可换成其他）
+}
+
+
 
 \begin{document}
 \maketitle
 
-\section{BPE算法（Byte Pair Encoding）}
-\subsection{算法背景}
-BPE是一种\textbf{数据压缩算法}，由Philip Gage于1994年提出。在NLP领域，Sennrich等人(2015)首次将其应用于子词分词，主要解决：
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%% Tokenization
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% \section{Tokenization}
+% \textbf{作业目的：}
+% 熟悉Tokenization的作用、原理，以及可能导致的问题；完成BPE算法的代码实现，并在给定文本上训练Tokenizer。
+
+% \textbf{算力要求：}
+% 这部分可以在CPU上运行。
+
+% \textbf{学习资料：}
+% 以下是一些可以参考的资料：
+% \begin{itemize}
+%     \item https://www.youtube.com/watch?v=zduSFxRajkE
+%     \item https://github.com/karpathy/minbpe
+%     \item https://huggingface.co/docs/tokenizers/index
+%     \item https://tiktokenizer.vercel.app/
+%     \item https://github.com/openai/tiktoken
+%     \item https://github.com/google/sentencepiece
+% \end{itemize}
+
+% \subsection{Question:实现BPE，训练Tokenizer（6分）}
+% 请根据老师上课所讲内容，结合上面列出的参考资料，自己实现一个基于BPE算法的tokenizer并训练，具体任务如下：
+% \begin{itemize}
+%     \item 【1分】在实验报告中简要概述一下BPE算法和基于BPE算法训练LLM tokenizer的流程。
+%     \item 【2分】实现一个基于BPE算法的tokenizer。
+%     \item 【1分】hw1-code/bpe/manual.txt是《北京大学研究生手册（2023版）》中提取出来的文字，请你用它来训练你的tokenizer，vocab\_size为1024。
+%     \item 【1分】用它来encode再decode manual.txt，检查与原始manual.txt是否完全一致？
+%     \item 【1分】学习使用huggingface transformers中的tokenizer，使用它加载GPT-2的tokenizer，然后使用它和你训练的tokenizer分别encode以下句子，比较两者的输出，简要解释长度上和具体token上不同的原因是什么。
+% \end{itemize}
+
+\section{Tokenization}
+\subsection{实现BPE，训练Tokenizer}
+\subsubsection{简述BPE算法和基于BPE算法训练LLM tokenizer的流程}
+BPE（Byte Pair Encoding）算法是一种\textbf{文本压缩算法}，最早由Philip Gage于1994年提出，用于数据压缩，后来被广泛应用于自然语言处理（NLP）任务，其基本思想是通过“合并”文本中的常见字符对来减少表示的字符数量，从而简化文本的表示，具体过程如下：算法通过迭代地统计文本中最常见的字符对，并将其合并为新的符号，从而逐步减少词汇表的大小。BPE起始时将文本拆解为字符级单位，接着通过多轮合并频繁出现的字符对，最终得到一个包含子词（subwords）的词汇表。
+% \begin{itemize}
+%     \item \textbf{初始状态}：从一个单词序列开始，比如 “l o w e s t”，每个字符都是一个独立的单位。
+%     \item \textbf{寻找常见字符对}：算法会检查文本中最常见的两个字符（例如“l”和“o”），并将它们合并成一个新的符号（比如“lo”）。
+%     \item \textbf{更新文本}：然后，把所有出现的“lo”替换成新的合并符号，再继续寻找新的常见字符对。
+%     \item \textbf{重复步骤}：这个过程会不断重复，直到预设的合并次数完成，或者没有更多可以合并的字符对。
+% \end{itemize}
+通过这个方法，原本的多个字符逐渐被合并成更大、更有意义的单位，文本变得更简短。
+
+在训练一个大型语言模型时，我们需要一个\textbf{分词器}（tokenizer），它的任务是将文本拆分成模型可以理解的基本单元“tokens”。BPE算法是实现这种分词器的一种方法。基于BPE训练一个tokenizer的过程如下：
+
 \begin{itemize}
-    \item 开放词汇表问题(Open Vocabulary)
-    \item 罕见词表示问题(Rare Word Representation)
-    \item 多语言统一处理需求
+    \item \textbf{输入文本准备}：首先，我们收集大量的文本数据，作为训练tokenizer的原料。这里的原料可以来自新闻、书籍、网络文章等多种来源。
+    \item \textbf{分割成字符}：BPE的训练从将每个单词拆解成最小的单位（通常是单个字符）开始。比如，“hello” 会被拆成 $h$, $e$, $l$, $l$, $o$ 这些字符。
+    \item \textbf{统计字符对频率}：接着，我们会统计这些字符对的出现频率。例如，“h”与“e”组合在一起出现了多少次，“e”与“l”组合出现了多少次，等等。
+    \item \textbf{合并最常见的字符对}：BPE会根据频率选择出现最频繁的字符对进行合并。例如，如果字符对“l”和“o”是最常见的，它们就会被合并成一个新的token“lo”。然后更新文本，使用新的“lo”代替原来的字符对。
+    \item \textbf{重复合并}：这一过程会不断重复，每次都合并频率最高的字符对。直到达到预定的合并次数或没有更多的字符对可以合并为止。
+    \item \textbf{最终tokenizer}：经过多轮合并后，我们最终会得到一个包含多个子词（subwords）作为token的词汇表。这个词汇表中的token可以是完整的词，也可以是词的一部分（例如词根、前缀或后缀等）。
 \end{itemize}
 
-\subsection{数学形式化定义}
-给定语料库$D$，初始化字符集$V_0$，迭代执行以下操作：
-\[
-(v_i, v_j) = \mathop{\arg\max}\limits_{(x,y) \in P} \text{count}(x,y)
-\]
-其中：
-\begin{itemize}
-    \item $P$为当前所有可能相邻符号对集合
-    \item $\text{count}(x,y)$表示$(x,y)$在$D$中的共现频率
-\end{itemize}
-合并操作更新词汇表：
-\[
-V_{k+1} = V_k \cup \{v_i v_j\} \setminus \{v_i, v_j\}
-\]
+这样训练出来的tokenizer就能高效地将任何输入文本转化为token序列，供语言模型使用。
 
-\section{BPE核心算法流程}
-\begin{algorithm}[H]
-\caption{BPE训练过程}
-\begin{algorithmic}[1]
-\Require 原始文本语料$D$，目标词汇量$K$
-\Ensure BPE词汇表$V$
-\State 预处理：将$D$中所有单词添加终止符\texttt{</w>}
-\State 初始化$V_0 \gets$ 所有唯一字符 + \texttt{</w>}
-\State 统计所有单词的词频$f(w)$
-\For{$k=1$ to $K-|V_0|$}
-    \State 统计所有相邻符号对频率$f(pair)$
-    \State 选择最高频pair $(x,y)$
-    \State 将合并操作$x + y \rightarrow z$加入合并规则表
-    \State 更新$V_k \gets V_{k-1} \cup \{z\}$
-    \State 更新语料中所有$(x,y)$出现位置为$z$
-\EndFor
-\end{algorithmic}
-\end{algorithm}
+\subsubsection{实现一个基于BPE算法的tokenizer}
+具体实现见路径——hw1-code\bpe\bpe.ipynb，其中的主要函数如下：
+\begin{enumerate}
+    \item \textbf{初始化（\texttt{\_\_init\_\_})}：
+    \begin{itemize}
+        \item \texttt{vocab} 用于存储最终的词汇表。
+        \item \texttt{bpe\_codes} 用于存储字符对的合并规则。
+    \end{itemize}
 
-\subsection{详细步骤解释}
-\begin{enumerate}[label=\textbf{步骤 \arabic*},leftmargin=*]
-    \item \textbf{符号化预处理}
+    \item \textbf{训练阶段（\texttt{train})}：
     \begin{itemize}
-        \item 将文本转换为Unicode编码（处理多语言）
-        \item 添加单词边界标记：\texttt{low} $\Rightarrow$ \texttt{l o w </w>}
-        \item 示例词汇表：$V_0 = \{\texttt{l}, \texttt{o}, \texttt{w}, \texttt{</w>}\}$
+        \item 先将输入文本按单词进行分割，然后将每个单词转化为字符级别的表示，并为每个字符对分配频率。
+        \item 在每次迭代中，找到出现次数最多的字符对，然后将其合并成一个新符号。
+        \item 重复这一过程，直到达到指定的词汇表大小。
     \end{itemize}
-    
-    \item \textbf{频率统计阶段}
+
+    \item \textbf{编码阶段（\texttt{encode})}：
     \begin{itemize}
-        \item 构建共现矩阵：$\text{count}(x,y) = \sum_{w \in D} f(w) \cdot N_w(x,y)$
-        \item 其中$N_w(x,y)$表示单词$w$中$(x,y)$的出现次数
+        \item 将输入文本转化为字符列表，增加一个结束符号 \texttt{</w>}。
+        \item 然后，按照训练时得到的 BPE 规则，对文本进行编码，即合并最常见的字符对，直到只剩下一个符号序列。
+        \item 将符号转换为词汇表中的 ID（如果该符号未在词汇表中，返回 0）。
     \end{itemize}
-    
-    \item \textbf{动态合并过程}
-    \begin{table}[H]
-    \centering
-    \caption{BPE合并过程示例}
-    \begin{tabular}{cll}
-    \toprule
-    迭代次数 & 合并操作 & 新词汇表 \\
-    \midrule
-    1 & (o, w) $\rightarrow$ ow & \texttt{ow, l, o, w, </w>} \\
-    2 & (l, ow) $\rightarrow$ low & \texttt{low, ow, l, o, w, </w>} \\
-    3 & (e, r) $\rightarrow$ er & \texttt{er, low, ow, ...} \\
-    \bottomrule
-    \end{tabular}
-    \end{table}
-    
-    \item \textbf{终止条件}
+
+    \item \textbf{解码阶段（\texttt{decode})}：
     \begin{itemize}
-        \item 预设条件：达到目标词汇量$K$（典型值：32k, 50k）
-        \item 动态条件：$\max f(pair) < \theta$（阈值$\theta$通常设为2）
+        \item 使用反向词汇表将 ID 转换为符号，然后将符号拼接成最终的字符串。
+        \item 移除掉在编码过程中加入的 \texttt{</w>} 符号，恢复原始文本。
     \end{itemize}
 \end{enumerate}
 
-\section{LLM Tokenizer训练流程}
-\subsection{完整训练架构}
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.8\textwidth]{bpe_pipeline.png}
-\caption{BPE Tokenizer训练流程图}
-\label{fig:pipe}
+\subsubsection{用《北京大学研究生手册（2023版）》训练我的tokenizer}
+具体实现见路径——hw1-code\bpe\bpe.ipynb
+
+
+\subsection{回答问题}
+\subsubsection{问题一}
+答案见文件路径——hw1-code\bpe\unicode.ipynb
+
+\subsubsection{问题二}
+词汇表（vocab size）较大时，每个 token 表达的信息更多，序列更短，能更准确还原原文，但模型参数增多，占用内存大，泛化能力弱。相反，词汇表较小时，模型更轻量，适应性更强，能灵活组合新词，但会导致序列变长，计算开销增加，解码可读性降低。因此，词表大小应根据任务和资源平衡选择。
+
+\subsubsection{问题三}
+LLM 不是基于规则或算法的模型，而是基于统计和模式匹配的语言预测器。这使得它在处理\textbf{语义丰富但结构不严谨}的自然语言任务时表现很好，但在\textbf{结构严格、要求精确}的字符串处理任务上容易出错。LLM 的输入文本首先会被拆分为\textbf{token}而不是单个字符，所以当模型反转字符串时，它可能试图在 token 级别理解你，而不是按字符顺序处理。LLM 是基于大规模语言统计学习的，它记忆了很多例子，但并不真正理解操作规则。字符串反转是一个确定性算法任务，需要精准处理每个字符的位置——而 LLM 倾向于猜测合理输出而不是执行精确步骤。如果训练数据中没有大量明确标注“字符串反转”任务的例子，模型可能从未学过这种映射关系。所以它可能会看起来像在反转，但出现错字、遗漏或顺序错误。
+
+\subsubsection{问题四}
+LLM 在非英语语言上的表现较差，并非因语言本身简单或复杂,主要是因为训练数据偏英语、语言结构复杂、token 表示低效、以及模型偏向英文语料等多因素共同作用的结果，导致理解能力和生成质量下降。
+
+\begin{enumerate}[nosep]
+  \item \textbf{训练数据偏向英语：} 大多数预训练语料（如 Wikipedia、Books、Common Crawl）主要以英文为主，非英语语言尤其是日语在其中占比很低，导致模型对其学习不足。
+  
+  \item \textbf{语言结构差异大：} 英语使用空格分词，单词边界清晰；而日语使用混合文字系统（平假名、片假名和汉字），且无空格分词，语法结构更灵活、上下文依赖更强，增加了建模难度。
+  
+  \item \textbf{Token 表示效率低：} LLM 在处理日语时常将一个词拆成多个低频 token，使得同样信息需要更多 token 表示，降低了表示效率与准确性。
+  
+  \item \textbf{标注数据稀缺：} 高质量的指令数据、问答、摘要等监督样本在日语中远少于英文，限制了模型在具体任务中的表现。
+  
+  \item \textbf{模型架构偏向英文语料：} 许多模型最初在英语语料上设计和调优，对非英语语言并未做特殊优化，迁移效果有限。
+  
+  \item \textbf{长尾语言效应：} 训练过程中高频语言占主导地位，低资源语言（如日语）在训练过程中的“存在感”较弱，模型容易忽略其语义规律。
+\end{enumerate}
+
+\subsubsection{问题五}
+大型语言模型（LLM）在简单算术问题上的表现往往不如预期，主要原因在于其本质是语言建模器而非逻辑计算器。
+模型通过学习大规模文本预测最可能的下一个词，而非执行真实的数学运算；
+算术任务需要符号级的精确推理和中间状态记忆，例如逐位加法与进位处理，而这类结构化推理超出了 LLM 的原生能力；
+训练语料中涉及系统性数学计算的样本非常稀少，模型往往只能“模仿答案模式”而非真正理解运算逻辑。
+
+Note：但这个问题目前可以通过调用工具很优雅的解决（如把算数问题转化为python程序）
+
+\subsubsection{问题六}
+GPT-2 在编写 Python 代码时面临比预期更多的困难，主要原因在于其模型容量有限，难以捕捉代码所需的精确语法与逻辑结构。
+GPT-2 并未针对代码生成任务进行专门训练，其预训练目标仅为语言建模，缺乏指令理解能力与语义对齐能力。
+训练语料中高质量代码数据稀少，模型对编程语言的掌握有限。
+由于 GPT-2 是纯粹的语言模型，没有指令微调（SFT）、人类反馈微调（如 RLHF）和长上下文建模能力，其在理解函数间引用、模块组织等方面表现不佳。
+
+\subsubsection{问题七}
+大型语言模型（LLM）在遇到字符串 \texttt{<|endoftext|>} 时会突然中断，是因为该字符串在模型中被定义为特殊的结束标记 token。
+在训练过程中，模型习惯在文本结尾看到该 token，并学习到其后的内容通常为填充或终止信号。
+在生成时一旦模型预测出 \texttt{<|endoftext|>}，就会触发停止机制，立即结束文本生成。如果用户在输入 prompt 中显式包含该标记，也可能被模型误认为是终止信号，从而提前中断输出。
+
+\subsubsection{问题八}
+在向大型语言模型（LLM）提问诸如 “SolidGoldMagikarp” 之类奇特词语时，模型可能表现出崩溃、卡顿或输出异常的情况。这是因为该类词在模型使用的 BPE 分词器中被视为极其罕见的独立 token，几乎未出现在训练语料中，模型对其语义表示训练不足。当这些稀有 token 出现在输入中时，模型无法有效地预测其上下文，可能导致生成行为紊乱，甚至触发停止或异常终止。这类现象揭示了语言模型在 token 覆盖不均与长尾数据建模方面的局限。
+
+\subsubsection{问题九}
+在与大型语言模型（LLM）交互时，更推荐使用 YAML 而非 JSON 作为结构化数据格式。这是因为 YAML 的语法更接近自然语言，书写简洁，容错性强，便于模型生成；而 JSON 虽然结构明确，但语法严格，易出现引号、逗号、嵌套等格式错误，导致解析失败。YAML 也更适合嵌入提示词中用于 few-shot 示例或函数参数描述，能有效降低模型生成结构化数据时的复杂度与出错率。
+
+\subsubsection{问题十}
+尽管大型语言模型（LLM）在训练阶段以“预测下一个 token”为目标，具备端到端语言建模的表象，但在实际使用中并非真正意义上的端到端系统。输入文本需通过不可微、独立训练的分词器（tokenizer）预处理，其结果再输入模型；为完成具体任务往往依赖手工构造的 prompt 模板、few-shot 示例等中间设计；输出结果还需经过后处理程序解析与验证，例如提取 JSON、调用外部函数等。更进一步，模型的函数调用、工具使用等能力实质上是通过语言生成与外部解释模块协作完成。LLM 更像是“语言生成核心 + 多层交互结构”的系统，而非端到端执行器。
+
+
+\section{LLM Implementation}
+\section{LoRA Fine-tuning}
+\subsection{完整地运行代码，提交运行记录}
+完整运行助教老师提供在colab上的代码，文件保存在/hw1-code/lora路径下(本地运行时需要安装pytorch等相关库)，示例代码加载bloomz-560m模型及其tokenizer，给出示例推理函数，并给出了简单示例；之后，colab上的代码加载了imdb\_review\_3000数据集，并查看了数据的一个样本；随后进行lora微调，使用peft设定lora微调的参数，并用它来包装模型，创建工作区用以保存模型，使用transformer库的TrainingArguments类定义训练的参数，使用实例化的Trainer类中的train函数进行训练，训练过程的权重配置等参数保存在wandb.ai网站中（需要输入该网站中个人账号对应的api来进行训练），使用colab上的gpu训练速度较快，两分钟左右可以完成微调过程，最后就是保存模型，并再次测试，可以得到更加优质的回答。
+
+\subsection{完成首次训练，提交训练loss曲线和模型生成结果}
+根据chatgpt的提示，只需要修改 TrainingArguments，如下图所示：
+
+\begin{figure}[H]  % [H]表示此处强制插图
+    \centering
+    \includegraphics[width=0.9\textwidth]{pictures/code_screenshot.png} % 修改为你的图片文件名
+    \caption{修改TrainingArguments} % 图注
+    \label{fig:training_progress} % 图像引用标签
 \end{figure}
 
-\subsection{关键技术细节}
+得到的训练loss曲线如下图所示：
+
+\begin{figure}[H]  % [H]表示此处强制插图
+    \centering
+    \includegraphics[width=0.9\textwidth]{pictures/训练loss曲线.png} % 修改为你的图片文件名
+    \caption{修改TrainingArguments} % 图注
+    \label{fig:training_progress} % 图像引用标签
+\end{figure}
+
+模型生成结果如下：
+
+lora微调前：['I love this movie because it is so funny and I am sure that my friends will enjoy too']
+
+lora微调后：["I love this movie because it is very good. I have never seen a film that made me feel like an idiot, and the only thing which was lacking in my opinion (and not even one of them) were some nice scenes with lots more action than anything else on screen).<br /><br />The acting by John Huston has been great for years now but he still managed to make his mark as well at least when you saw him playing The Great Gatskills! It wasn't just about being clever or stupid -"]
+
+简单分析可以发现，微调后相比微调前，输出更加丰富，用词更加正式，英语表达也很少出现简单句，且更加流畅自然，我将微调前后的话给到chatgpt-4o来分析，给出的分析如下：【LoRA 微调后的模型在语言表达上更丰富、句式更复杂，展现出较强的生成能力，相较微调前简单重复输入的表现有明显提升。然而，微调后生成的内容出现了虚构信息和情绪偏离，可能偏离了原始任务目标，存在一定的语义不一致和“编故事”现象。这表明模型虽然学会了更自由的文本生成，但在任务对齐和输出可控性方面仍需优化，微调数据和目标需进一步明确与约束。】chatgpt将我的感受以更加正式的文字表达出来。
+
+\subsection{调试lora超参数（炼丹）}
+给定的代码是使用peft（Parameter-Efficient Fine-Tuning）库配置了 LoRA 微调参数，具体参数设置如下：
+
+\begin{figure}[H]  % [H]表示此处强制插图
+    \centering
+    \includegraphics[width=0.9\textwidth]{pictures/lora参数.png} % 修改为你的图片文件名
+    \caption{修改TrainingArguments} % 图注
+    \label{fig:training_progress} % 图像引用标签
+\end{figure}
+
+其中各项参数含义如下
 \begin{itemize}
-    \item \textbf{字节级处理}（GPT-2方案）
-    \begin{itemize}
-        \item 将文本转换为UTF-8字节序列（256个基础token）
-        \item 优点：完全消除未知字符问题
-        \item 示例：汉字「中」$\rightarrow$ \texttt{E4 B8 AD}
-    \end{itemize}
+    \item \textbf{r = 4}：表示低秩矩阵的秩，是 LoRA 注入模块的参数容量控制参数，$r$ 越大，可训练参数越多。$r=4$ 是轻量配置，适合快速微调和资源受限场景。
     
-    \item \textbf{子词正则化}
-    \begin{itemize}
-        \item 使用Unigram语言模型进行采样
-        \item 实现概率化的分词结果
-    \end{itemize}
+    \item \textbf{lora\_alpha = 1}：缩放因子 $\alpha$，用于调节 LoRA 注入输出的强度，实际生效值为 $\frac{\alpha}{r}$。设置为 1 表示不进行额外缩放。
     
-    \item \textbf{合并策略优化}
-    \begin{equation}
-    \text{Score}(x,y) = \frac{\text{count}(x,y)}{\text{count}(x) \times \text{count}(y)}
-    \end{equation}
-    选择互信息最大的符号对进行合并
+    \item \textbf{target\_modules = ["query\_key\_value"]}：指定对模型中的哪些模块注入 LoRA 权重，常见模块如 \texttt{q\_proj}、\texttt{k\_proj}、\texttt{v\_proj} 等。此处选择 \texttt{query\_key\_value}，聚焦于 Transformer 的注意力层。
+    
+    \item \textbf{lora\_dropout = 0.05}：对 LoRA 层引入 5\% 的 Dropout，用于防止过拟合，尤其在小数据集微调中有良好效果。
+    
+    \item \textbf{bias = "lora\_only"}：仅对 LoRA 层中的偏置参数进行训练，是一种在训练效率与性能之间取得平衡的设置。
+    
+    \item \textbf{task\_type = "CAUSAL\_LM"}：指定任务类型为自回归语言建模（Causal Language Modeling），适用于 GPT 类模型的下一个 token 预测任务。
 \end{itemize}
 
-\section{实现对比分析}
-\begin{table}[H]
-\centering
-\caption{BPE变体对比}
-\begin{tabularx}{\textwidth}{lXXX}
-\toprule
-\textbf{类型} & \textbf{BPE} & \textbf{WordPiece} & \textbf{Unigram} \\
-\midrule
-合并策略 & 频率优先 & 最大似然估计 & 概率删除 \\
-训练方式 & 贪婪合并 & 迭代EM算法 & 动态规划 \\
-处理未知词 & 子词分解 & 同左 & 同左 \\
-典型应用 & GPT系列 & BERT & XLNet \\
-\bottomrule
-\end{tabularx}
-\end{table}
 
-\section*{附录：代码实现}
-\begin{itemize}
-    \item Hugging Face实现核心逻辑：
-    \begin{verbatim}
-class BPE:
-    def train(self, texts, vocab_size):
-        merges = []
-        vocab = self._build_initial_vocab(texts)
-        while len(vocab) < vocab_size:
-            pairs = self._get_pairs_with_freq(texts)
-            if not pairs:
-                break
-            best_pair = max(pairs, key=pairs.get)
-            texts = self._merge_pair(best_pair, texts)
-            merges.append(best_pair)
-            vocab.add(''.join(best_pair))
-        return merges
-    \end{verbatim}
-\end{itemize}
+\subsection{lora微调时，修改训练数据集为Alpaca数据集}
+将微调的数据集替换成Alpaca数据集，原始代码有几处需要修改：
+
+最明显一定是把数据集替换掉——dataset = "noob123/imdb\_review\_3000"替换为dataset = load\_dataset("tatsu-lab/alpaca")
+
+第二处是数据预处理，Alpaca 数据是 instruction + input → output 格式，需拼接为 prompt：
+
+\begin{lstlisting}[language=Python, caption=拼接为prompt]
+def format_alpaca(example):
+    instruction = example["instruction"]
+    input_text = example.get("input", "")
+    prompt = f"### Instruction:\n{instruction}\n\n### Input:\n{input_text}\n\n### Response:\n"
+    return {"prompt": prompt, "response": example["output"]}
+
+formatted_dataset = dataset["train"].map(format_alpaca)
+\end{lstlisting}
+
+然后创建 tokenized 输入：
+\begin{lstlisting}[language=Python, caption=创建 tokenized 输入]
+from transformers import AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained("bigscience/bloomz-560m")
+
+def tokenize(example):
+    input_ids = tokenizer(example["prompt"], truncation=True, padding="max_length", max_length=512).input_ids
+    labels = tokenizer(example["response"], truncation=True, padding="max_length", max_length=512).input_ids
+    return {"input_ids": input_ids, "labels": labels}
+
+tokenized_dataset = formatted_dataset.map(tokenize, remove_columns=formatted_dataset.column_names)
+\end{lstlisting}
+
+最后是在训练时，把 train_dataset 替换成 tokenized_dataset 即可
+
+完整代码见路径：
+
+
+
+
+
 \end{document}

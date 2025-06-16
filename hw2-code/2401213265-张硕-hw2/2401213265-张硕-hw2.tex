@@ -1,0 +1,221 @@
+\documentclass{article}
+
+% 页边距设置，缩小左右空白
+\usepackage[a4paper, left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm]{geometry}
+
+% 常用宏包
+\usepackage[UTF8]{ctex} % 中文支持
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{algorithm,algpseudocode}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{listings}
+
+% 超链接颜色设置
+\hypersetup{colorlinks=true,urlcolor=red}
+
+% 算法输入输出格式
+\renewcommand{\algorithmicrequire}{\textbf{输入:}}
+\renewcommand{\algorithmicensure}{\textbf{输出:}}
+
+% 文档标题、作者和日期
+\title{Large Language Models and Alignment —— Homework2}
+\author{张硕}
+\date{\today}
+
+
+% 定义代码块
+\definecolor{codegray}{gray}{0.95}
+\lstset{
+  backgroundcolor=\color{codegray},   % 代码背景色
+  basicstyle=\ttfamily\small,         % 字体风格和大小
+  keywordstyle=\color{blue},          % 关键字颜色
+  commentstyle=\color{gray},          % 注释颜色
+  stringstyle=\color{orange},         % 字符串颜色
+  breaklines=true,                    % 自动换行
+  frame=single,                       % 边框
+  columns=fullflexible,               % 字母不压缩
+  language=Python                     % 指定语言（可换成其他）
+}
+
+
+\begin{document}
+\maketitle
+
+
+
+
+\section{奖励模型实现}
+\subsection{偏好数据集键值转换}
+首先谈下我对问题的理解：
+
+在大语言模型的对齐训练 RLHF 阶段，通常会使用“偏好数据集”来告诉模型：
+
+\textbf{“在这个问题（prompt）下，两个回答中，哪一个更好？”}
+
+不同的数据集用不同的字段来表达这种“哪一个回答更好”的结构，所以需要写一个“转换器”，统一它们的格式，以便系统能读懂。但 align-anything 训练框架只认统一格式，所以我需要做的是，为我使用的偏好数据集实现一个转换器（template），让框架能识别它的格式并转化为统一训练格式。具体代码如下：
+\begin{lstlisting}[language=Python, caption=HOMEWORK template 实现]
+from align_anything.configs.template import register_template, BaseFormatter
+from typing import Any
+
+@register_template('HOMEWORK')
+class HOMEWORK(BaseFormatter):
+    system_prompt: str = ''
+
+    def format_preference_sample(
+        self, raw_sample: dict[str, Any]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+        # 判断哪一个是更优的回答
+        better_id = int(raw_sample['overall_response'])  # 假设它是 "1" 或 "2"
+        better_response = raw_sample[f'response_{better_id}']
+        worse_response = raw_sample[f'response_{3 - better_id}']  # 1+2=3
+
+        prompt = raw_sample['question']
+
+        # 构造 better conversation
+        better_conversation = [
+            {'role': 'user', 'content': prompt},
+            {'role': 'assistant', 'content': better_response},
+        ]
+
+        # 构造 worse conversation
+        worse_conversation = [
+            {'role': 'user', 'content': prompt},
+            {'role': 'assistant', 'content': worse_response},
+        ]
+
+        # 额外信息
+        meta_info = {
+            'better_text': better_response,
+            'worse_text': worse_response,
+        }
+
+        return better_conversation, worse_conversation, meta_info
+\end{lstlisting}
+这段代码放在 align\_anything/configs/template.py 中。
+
+\subsection{训练奖励模型}
+目前还没有服务器，该题暂时搁置
+
+\subsection{评测奖励模型}
+目前还没有服务器，该题暂时搁置
+
+\subsection{使用奖励模型可视化偏好数据集}
+目前还没有服务器，该题暂时搁置
+
+\subsection{回答问题}
+\subsubsection{奖励建模有哪些应用？}
+奖励建模（Reward Modeling, RM）在大型语言模型的强化学习微调过程中很重要，是 RLHF（Reinforcement Learning from Human Feedback）流程的重要组成部分\cite{ouyang2022training}。RM 的核心作用，通俗来讲就是学习人类偏好评分函数，用于指导策略模型生成更加符合预期的文本。
+
+具体应用包括：在 RLHF 中作为奖励函数，引导策略模型优化生成行为；
+在多候选生成任务中，如 Best-of-N 策略中，对多个答案进行打分并选择最优者\cite{ziegler2019fine}; 
+用于筛选高质量训练数据，降低人工标注负担；
+在训练分析中，RM 可用于诊断过拟合、长度偏差等问题；
+RM的思想已推广至图像生成、游戏智能体控制等非文本任务中\cite{bai2022training}。
+
+\vspace{0.5em}
+
+\subsubsection{奖励建模训练可能存在哪些鲁棒性问题？}
+RM 在它的训练过程中，容易受到标注偏差、模型过拟合与分布不一致的影响。
+最明显的问题在于，对人类的反馈的评价标准往往难以存在严格意义上的好与坏，人类反馈具有主观性，不同标注者的标准可能不一致，导致标签噪声。
+除了上述问题之外，RM 训练过程可能对策略模型分布过拟合，缺乏泛化能力\cite{ouyang2022training}。此外，由于策略模型训练后分布变化，RM 也容易失效，引发策略模型“操纵”奖励模型的现象，即 reward hacking\cite{bai2022training}，这会导致生成结果偏离真正的人类期望。
+
+\vspace{0.5em}
+
+\subsubsection{如何缓解奖励建模的长度偏差？}
+长度偏差是奖励建模中非常非常常见的问题，通俗一点的理解就是，对较长文本给予更高评分。
+这可能源于训练数据中的偏好趋势，也可能是模型训练过程中的归一化不足。
+缓解方法包括：对 reward 按长度进行归一化；使用 pairwise loss 替代回归损失，关注相对偏好而非绝对得分\cite{ziegler2019fine}；在数据收集阶段平衡不同长度样本的分布\cite{anthropic2023claude}。这些方法能够有效抑制 RM 在长度上的系统性偏差。
+
+\vspace{0.5em}
+\subsubsection{有哪些拟合多元人类偏好的奖励建模方法？}
+
+为建模不同用户群体的偏好差异，有研究提出以下方法：其一，引入混合建模或聚类机制，对多种偏好风格进行建模；其二，设计条件奖励模型（conditional RM），根据用户信息或偏好维度输出个性化评分；其三，通过多任务学习同时学习多个偏好维度（如有用性、礼貌性等）\cite{anthropic2023claude}，并在策略优化时加权组合多个 reward 信号。这些方法增强了模型对真实世界多样人类偏好的适应能力。
+
+\vspace{1em}
+
+\noindent
+参考文献：
+
+\begin{thebibliography}{9}
+\bibitem{ouyang2022training}
+Long Ouyang et al. \emph{Training language models to follow instructions with human feedback}. NeurIPS, 2022.
+
+\bibitem{ziegler2019fine}
+Daniel Ziegler et al. \emph{Fine-Tuning Language Models from Human Preferences}. arXiv preprint arXiv:1909.08593, 2019.
+
+\bibitem{bai2022training}
+Yuntao Bai et al. \emph{Training a Helpful and Harmless Assistant with RLHF}. Anthropic, 2022.
+
+\bibitem{anthropic2023claude}
+Anthropic. \emph{Constitutional AI and multi-dimensional preference modeling}. 2023. https://www.anthropic.com/index/claude-and-rlhf
+\end{thebibliography}
+
+
+\section{DPO微调}
+\subsection{运行DPO微调}
+目前还没有服务器，该题暂时搁置
+
+\subsection{评测DPO微调模型}
+目前还没有服务器，该题暂时搁置
+
+\subsection{回答问题}
+
+\subsubsection{从强化学习的角度，DPO是on-policy还是off-policy的，是online的还是offline的，为什么？}
+我认为，DPO（Direct Preference Optimization）可以认为是一种off-policy、offline的强化学习方法。
+其“off-policy”属性在于它使用\textbf{固定的、历史采集的数据集}（通常为人类偏好对比数据），而不依赖于当前策略与环境交互生成新数据；“offline”属性则体现在模型训练过程中并不需要实时与环境交互，而是直接在已有的数据集上进行优化。
+
+相比于传统RLHF中使用PPO等方法的on-policy训练，DPO避免了昂贵的样本采集开销，且可以利用大规模现成的人类偏好对比数据进行高效训练\cite{rafailov2023direct}。
+
+
+\subsubsection{DPO主要针对传统RLHF的哪个方面进行了优化，关键见解是什么？}
+
+DPO主要针对**奖励建模（Reward Modeling, RM）及其后的强化学习阶段**的问题进行优化。
+关键见解在于：**避免显式训练RM和PPO策略微调的两个阶段**，转而直接用人类偏好对比信号优化策略，从而减少噪声传播和训练不稳定性。DPO采用一种最大化偏好对比概率的方式，直接从pairwise比较数据中优化策略，无需显式奖励模型\cite{rafailov2023direct}。
+
+这样不仅减少了RM中由于主观偏好、标签噪声和reward hacking导致的问题，也提高了样本效率与训练稳定性。
+
+
+
+\subsubsection{DPO和传统RLHF相比有哪些局限性，具体体现在哪些方面？}
+
+DPO可以认为是简化版的RLHF流程，但是简化之后存在以下几个局限：第一个就是依赖静态偏好对比数据，训练过程无法通过环境交互更新数据分布，可能导致泛化能力不足。第二个我认为是假设偏好一致性：DPO优化目标基于成对样本的顺序一致性，难以处理偏好标签矛盾或多样性问题。第三个是无法直接进行Reward诊断与解释，由于没有明确的RM模块，DPO在生成错误时难以追溯reward误导源。
+
+此外，一些研究指出，DPO优化可能受限于训练数据长度偏差和上下文分布差异等问题\cite{rafailov2023direct}。
+
+\subsubsection{现有的研究（KTO，SimPO，ORPO等）主要从哪些方面对DPO进行优化？}
+
+现有的这些改进版本的DPO的研究集中在以下几个方面：第一个是KTO（KL-weighted Training Objective），引入KL散度正则项来约束策略更新幅度，增强稳定性与保守性。第二个是SimPO（Similarity-Guided Preference Optimization），在pairwise优化中引入相似性约束，使策略对相似输入给出一致偏好。第三个是ORPO（Orthogonal DPO），通过正交投影对梯度进行去偏，减少无关特征干扰，提升策略泛化能力。
+
+我认为这三项改进在本质上都在尝试从不同角度缓解DPO中的“信息不完整”与“训练不稳”两个核心问题，使其更可靠地学习偏好结构\cite{rafailov2023direct}。
+
+参考文献：
+
+\begin{thebibliography}{9}
+\bibitem{rafailov2023direct}
+Rafailov, R., Liu, A., Yang, K., et al. \emph{Direct Preference Optimization: Your Language Model is Secretly a Reward Model}. arXiv preprint arXiv:2305.18290, 2023.
+\bibitem{ouyang2022training}
+Long Ouyang et al. \emph{Training language models to follow instructions with human feedback}. NeurIPS, 2022.
+\bibitem{ziegler2019fine}
+Daniel Ziegler et al. \emph{Fine-Tuning Language Models from Human Preferences}. arXiv:1909.08593, 2019.
+\bibitem{bai2022training}
+Yuntao Bai et al. \emph{Training a Helpful and Harmless Assistant with RLHF}. Anthropic, 2022.
+\bibitem{anthropic2023claude}
+Anthropic. \emph{Constitutional AI and multi-dimensional preference modeling}. 2023. \url{[https://www.anthropic.com/index/claude-and-rlhf}](https://www.anthropic.com/index/claude-and-rlhf})
+\end{thebibliography}
+
+
+
+\section{Bonus: 制作一个text-to-text DPO的ipynb文件}
+这道题我的理解是写一个 Jupyter Notebook，实现 text-to-text 的 DPO 微调流程，使用任意模型和数据，确保能运行、损失函数正确，最终形成一个 .ipynb 文件提交。
+参考链接里的https://github.com/PKU-Alignment/align-anything/blob/main/cookbooks/zh/text\_image\_to\_text\_sft.ipynb内容是image-to-text的，仅用来给我做参考格式结构和写作方式的.
+
+具体实现流程见路径Large-Language-Models-and-Alignment/hw2-code/Bonus，具体实现过程见其中ipynb中的markdown讲解
+
+
+
+\end{document}

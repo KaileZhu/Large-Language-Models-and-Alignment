@@ -24,7 +24,7 @@
 
 % 文档标题、作者和日期
 \title{Large Language Models and Alignment —— Homework2}
-\author{张硕}
+\author{张硕 2401213265}
 \date{\today}
 
 
@@ -47,6 +47,16 @@
 \maketitle
 
 
+\section{align-anything部署}
+第一步是部署代码，这里首先fork网址：https://github.com/PKU-Alignment/align-anything，git clone到本地，创建conda虚拟环境并激活，设置把环境变量写入.bashrc文件中，避免每次运行都要source一遍，最后安装要求的库依赖：pip3 install -e .[ascend]，即可完成代码基本部署
+\begin{lstlisting}[language=Python,把环境变量写入到.bashrc中]
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+export LD_LIBRARY_PATH=/usr/local/Ascend/driver/lib64/driver:$LD_LIBRARY_PATH
+\end{lstlisting}
+
+第二步是下载模型，按照要求下载指定的模型，登录hugging face获取个人hf\_token，conda activate虚拟环境之后，输入huggingface-cli login，跟随指令输入hf\_token,在命令行执行huggingface-cli download --resume-download PKU-Alignment/Beaver-0.5B-Instruct --local-dir LOCAL_DIR，并修改保存路径，即可完成模型下载
+
+第三步是下载数据集，这里的操作与下载模型十分类似，命令如下：huggingface-cli download --repo-type dataset --resume-download PKU-Alignment/PKU-SafeRLHF-single-dimension --local-dir LOCAL\_DIR --local-dir-use-symlinks False，要替换保存路径。
 
 
 \section{奖励模型实现}
